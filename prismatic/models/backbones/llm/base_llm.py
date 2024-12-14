@@ -104,7 +104,7 @@ class HFCausalLLMBackbone(LLMBackbone, ABC):
         llm_backbone_id: str,
         llm_family: str,
         llm_cls: Type[PreTrainedModel],
-        hf_hub_path: str,
+        hf_hub_path: str,  # meta-llama/Llama-2-7b-hf
         llm_max_length: int = 2048,
         hf_token: Optional[str] = None,
         inference_mode: bool = False,
@@ -122,7 +122,10 @@ class HFCausalLLMBackbone(LLMBackbone, ABC):
             self.llm = llm_cls.from_pretrained(
                 hf_hub_path,
                 token=hf_token,
-                use_flash_attention_2=use_flash_attention_2 if not self.inference_mode else False,
+                # use_flash_attention_2=use_flash_attention_2 if not self.inference_mode else False,
+                # For HUAWEI NPU, we need to disable Flash Attention 2
+                use_flash_attention_2=False,
+                attn_implementation="sdpa",
                 # The following parameters are set to prevent `UserWarnings` from HF; we want greedy decoding!
                 do_sample=False,
                 temperature=1.0,

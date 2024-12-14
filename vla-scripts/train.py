@@ -21,11 +21,16 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Tuple, Union
-
+import torch.nn.functional
 import draccus
 import torch
 import torch.distributed as dist
+import torch_npu
 import yaml
+
+# add parent directory to path
+import sys
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from prismatic.conf import VLAConfig, VLARegistry
 from prismatic.models import load, load_vla
@@ -73,8 +78,9 @@ class TrainConfig:
     seed: int = 7                                                   # Random seed (for reproducibility)
 
     # HF Hub Credentials (for any gated models)
+    # hf_token: Union[str, Path] = Path(".hf_token")                  # Environment variable or Path to HF Token
     hf_token: Union[str, Path] = Path(".hf_token")                  # Environment variable or Path to HF Token
-
+    
     # Tracking Parameters
     trackers: Tuple[str, ...] = ("jsonl", "wandb")                  # Trackers to initialize (if W&B, add config!)
     wandb_project: str = "openvla"                                  # Name of W&B project to log to (use default!)
@@ -82,6 +88,31 @@ class TrainConfig:
 
     def __post_init__(self) -> None:
         """Lift optimization parameters from `self.vla` for ease of use =>> validate on `expected_world_size`"""
+        # ******** for Debug *********
+        self.vla.epochs = 1
+        # HUAWEI NPU doesn't support BFloat16
+        # self.vla.enable_mixed_precision_training = False
+
+        # for train on 8 st910Bs
+        # export OMP_NUM_THREADS=24
+        # self.vla.expected_world_size = 1  # default 8
+        # self.vla.global_batch_size = 16  # default 256
+        self.vla.per_device_batch_size = 24  # default 32
+        self.vla.expected_world_size = torch.npu.device_count()
+        self.vla.global_batch_size = self.vla.per_device_batch_size * self.vla.expected_world_size
+
+        self.vla.learning_rate = 2e-6
+        # for "vla-sandwich-train"
+        # self.vla.freeze_llm_backbone = True
+        # self.vla.unfreeze_last_llm_layer = True
+
+        # for "vla-train"
+        # self.vla.freeze_vision_backbone = True
+
+        # TODO Enable
+        # Flash-attn prismatic/models/backbones/llm/base_llm.py line:127
+        # [Solved!] Mixed_precision train.py line:95
+
         self.epochs = self.vla.epochs
         self.max_steps = self.vla.max_steps
         self.global_batch_size = self.vla.global_batch_size
@@ -108,8 +139,10 @@ def train(cfg: TrainConfig) -> None:
     overwatch.info("OpenVLA Training :: Warming Up")
 
     # Note => Under `torchrun` initializing `overwatch` will automatically set up `torch.distributed`
-    torch.cuda.set_device(device_id := overwatch.local_rank())
-    torch.cuda.empty_cache()
+    torch.npu.set_device(device_id := overwatch.local_rank())
+    torch.npu.empty_cache()
+    # torch.cuda.set_device(device_id := overwatch.local_rank())
+    # torch.cuda.empty_cache()
 
     # Configure Unique Run Name & Save Directory
     vla_id = cfg.vla.vla_id
@@ -228,6 +261,7 @@ def train(cfg: TrainConfig) -> None:
 
     # Create Metrics =>> Handles on the fly tracking, logging to specified trackers (e.g., JSONL, Weights & Biases)
     overwatch.info(f"Creating Metrics with Active Trackers => `{cfg.trackers}`")
+    # bugfix: https://github.com/wandb/wandb/issues/8609
     metrics = VLAMetrics(
         cfg.trackers,
         cfg.run_id,

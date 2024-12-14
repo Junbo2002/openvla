@@ -54,7 +54,8 @@ def generate(cfg: GenerateConfig) -> None:
     overwatch.info(f"Initializing Generation Playground with Prismatic Model `{cfg.model_path}`")
     hf_token = cfg.hf_token.read_text().strip() if isinstance(cfg.hf_token, Path) else os.environ[cfg.hf_token]
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-
+    device = torch.device("npu") if torch.npu.is_available() else device
+    
     # Load the pretrained VLM --> uses default `load()` function
     vlm = load(cfg.model_path, hf_token=hf_token)
     vlm.to(device, dtype=torch.bfloat16)

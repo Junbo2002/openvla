@@ -92,7 +92,7 @@ def get_vision_backbone_and_transform(
 
 
 def get_llm_backbone_and_tokenizer(
-    llm_backbone_id: str,
+    llm_backbone_id: str,  # llama2-7b-pure
     llm_max_length: int = 2048,
     hf_token: Optional[str] = None,
     inference_mode: bool = False,

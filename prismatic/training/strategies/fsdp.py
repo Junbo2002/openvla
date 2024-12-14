@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 import torch
+import torch_npu
 import torch.distributed as dist
 import torch.nn as nn
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
@@ -162,7 +163,9 @@ class FSDPStrategy(TrainingStrategy):
             auto_wrap_policy=vlm_fsdp_wrapping_policy,
             mixed_precision=fsdp_precision_policy,
             sharding_strategy=self.fsdp_sharding_strategy,
-            device_id=torch.cuda.current_device(),
+            # device_id=torch.cuda.current_device(),
+            # For huawei npu
+            device_id=torch.npu.current_device(),  # 0
             limit_all_gathers=True,
             use_orig_params=True,
         )

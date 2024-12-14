@@ -83,6 +83,7 @@ class TrainingStrategy(ABC):
             self.global_batch_size % self.per_device_batch_size == 0
         ), "Per-device batch size must evenly divide global batch size!"
         self.grad_accumulation_steps = self.global_batch_size // self.per_device_batch_size // overwatch.world_size()
+        # overwatch.info(f"grad_accumulation_steps{self.grad_accumulation_steps}\nglobal_batch_size:{self.global_batch_size}\nper_device_batch_size:{self.per_device_batch_size}\world_size:{overwatch.world_size()}")
         if self.enable_mixed_precision_training:
             assert self.mixed_precision_dtype == torch.bfloat16, "Only BF16 mixed precision training is supported!"
             assert check_bloat16_supported(), "BFloat16 is not supported on this hardware; unset `mixed_precision`"
@@ -177,7 +178,7 @@ class TrainingStrategy(ABC):
                 for train_idx, batch in enumerate(dataloader):
                     # [Contract] self.vlm.forward() must automatically compute `loss` and return!
                     with torch.autocast(
-                        "cuda",
+                        "npu",
                         dtype=self.mixed_precision_dtype,
                         enabled=self.enable_mixed_precision_training,
                     ):
@@ -257,13 +258,13 @@ class TrainingStrategy(ABC):
 
         # Create a DataLoader =>> Set `num_workers` to 0; RLDS loader handles parallelism!
         dataloader = DataLoader(
-            vla_dataset,
+            vla_dataset,  # 2135436
             batch_size=self.per_device_batch_size,
             sampler=None,
             collate_fn=collator,
             num_workers=0,
             worker_init_fn=self.worker_init_fn,
-        )
+        )  # 266933
 
         # === Train ===
         status = metrics.get_status()
@@ -285,7 +286,7 @@ class TrainingStrategy(ABC):
                 # Note that we'll unpack batch (and let AMP/FSDP do its thing) in the VLM.forward() call
                 #   => Basically, if we're using mixed precision (or not), autocast()/FSDP will move to device!
                 with torch.autocast(
-                    "cuda", dtype=self.mixed_precision_dtype, enabled=self.enable_mixed_precision_training
+                    "npu", dtype=self.mixed_precision_dtype, enabled=self.enable_mixed_precision_training
                 ):
                     # [Contract] self.vlm.forward() must automatically compute `loss` and return!
                     output: CausalLMOutputWithPast = self.vlm(
